@@ -14,6 +14,7 @@ class USBMonitor:
         self.active_devices = {}  # Maps physical device_path -> player_id
         self.monitor = None
         self.has_udev = False
+        self._initialized = False  # Guard: ignore events until startup scan completes
         
         if config.ENABLE_USB_MONITOR:
             try:
@@ -46,12 +47,38 @@ class USBMonitor:
             # Register the monitor's file descriptor as a reader in the event loop
             loop.add_reader(self.monitor.fileno(), self._handle_udev_event)
             logger.info("USB Monitor reader added to asyncio event loop successfully.")
+            # Schedule startup initialization: drain any queued events and set initialized flag
+            asyncio.create_task(self._startup_init())
         except Exception as e:
             logger.error(f"Failed to register udev reader with event loop: {e}")
+
+    async def _startup_init(self):
+        """Drain any queued udev events from before startup, then mark as initialized."""
+        # Brief delay to let any boot-time udev events arrive and get drained
+        await asyncio.sleep(2)
+        # Drain any queued events that arrived during startup (discard them)
+        if self.monitor:
+            event = self.monitor.poll(timeout=0)
+            drained = 0
+            while event is not None:
+                drained += 1
+                event = self.monitor.poll(timeout=0)
+            if drained:
+                logger.info(f"Drained {drained} startup udev event(s) (ignored).")
+        self._initialized = True
+        logger.info("USB Monitor initialized — now reacting to USB events.")
 
     def _handle_udev_event(self):
         """Callback from asyncio reader when the monitor fileno is readable."""
         if not self.monitor:
+            return
+        
+        if not self._initialized:
+            # Drain events silently during startup
+            event = self.monitor.poll(timeout=0)
+            while event is not None:
+                logger.debug(f"Ignoring pre-init udev event: {event.action} on {event.device_path}")
+                event = self.monitor.poll(timeout=0)
             return
             
         # Poll non-blocking to retrieve all queued udev events
@@ -158,7 +185,14 @@ class USBMonitor:
         Scans /dev/disk/by-id for block devices every 2 seconds.
         """
         from pathlib import Path
-        known = set()
+        # Initial baseline scan: treat all currently-connected devices as already known
+        # so they don't trigger start_plant on first iteration
+        base_path = Path('/dev/disk/by-id')
+        if base_path.is_dir():
+            known = {p.resolve() for p in base_path.iterdir() if p.is_symlink()}
+        else:
+            known = set()
+        logger.info(f"[POLL] Initial baseline: {len(known)} existing device(s) detected and ignored.")
         while True:
             try:
                 base_path = Path('/dev/disk/by-id')
