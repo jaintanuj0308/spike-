@@ -1,0 +1,24 @@
+import asyncio
+
+async def test():
+
+    print("Round Started")
+
+    print("Attacker inserts pendrive")
+    await asyncio.sleep(5)
+
+    print("Planting...")
+    await asyncio.sleep(60)
+
+    print("Spike planted")
+
+    spike = 40
+
+    while spike > 0:
+        print(f"Spike Remaining: {spike}")
+        spike -= 1
+        await asyncio.sleep(1)
+
+    print("EXPLODED")
+
+asyncio.run(test())
