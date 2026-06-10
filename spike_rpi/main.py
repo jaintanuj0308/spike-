@@ -14,6 +14,7 @@ from tick import tick_loop
 from websocket_manager import ws_manager
 from backend_client import init_backend_client
 import spike_logic
+from spike_logic import broadcast_state
 from compatibility_check import verify_raspberry_pi_32bit
 
 
@@ -140,7 +141,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     logger.warning("defuse event missing player_id")
                 
-            else:
+            elif event == "status":
+                # Send current state on demand
+                await broadcast_state(state_instance)
+            elif event == "force_explode":
+                # Trigger spike explosion (attackers win)
+                await spike_logic.explode(state_instance)
+            elif event == "round_start":
+                # Explicitly start the round (unpause timers)
+                await spike_logic.start_round(state_instance)
+            elif event == "round_end":
+                # End the round early – reset to idle
+                await spike_logic.reset_round(state_instance)
+
                 logger.warning(f"Unknown control command event: {event}")
                 
     except WebSocketDisconnect:
