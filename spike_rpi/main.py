@@ -10,7 +10,7 @@ from spike_state import SpikeState
 from usb_monitor import USBMonitor
 from gpio_output import gpio_handler
 from tick import tick_loop
-from routes import router, get_state
+
 from websocket_manager import ws_manager
 from backend_client import init_backend_client
 import spike_logic
@@ -88,10 +88,10 @@ app.add_middleware(
 )
 
 # Register SPIKE State dependency injection override
-app.dependency_overrides[get_state] = lambda: state_instance
+
 
 # Mount REST endpoints
-app.include_router(router)
+
 
 
 @app.websocket("/ws")
@@ -126,18 +126,19 @@ async def websocket_endpoint(websocket: WebSocket):
             elif event == "reset_round":
                 await spike_logic.reset_round(state_instance)
                 
-            elif event == "force_explode":
-                await spike_logic.explode(state_instance)
-                
-            elif event == "round_start":
-                await spike_logic.start_round(state_instance)
-                
-            elif event == "round_end":
-                await spike_logic.reset_round(state_instance)
-                
-            elif event == "set_time_scale":
-                scale = data.get("scale", 1.0)
-                await state_instance.update(time_scale=float(scale))
+            elif event == "plant":
+                player_id = data.get("player_id")
+                if player_id:
+                    await spike_logic.start_plant(state_instance, player_id)
+                else:
+                    logger.warning("plant event missing player_id")
+            elif event == "defuse":
+                player_id = data.get("player_id")
+                if player_id:
+                    skip_role_check = data.get("skip_role_check", False)
+                    await spike_logic.start_defuse(state_instance, player_id, skip_role_check=skip_role_check)
+                else:
+                    logger.warning("defuse event missing player_id")
                 
             else:
                 logger.warning(f"Unknown control command event: {event}")
