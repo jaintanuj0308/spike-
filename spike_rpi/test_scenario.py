@@ -387,6 +387,64 @@ async def test_scenario_8_spike_timer_freezes_during_defuse():
     print("[PASS] Scenario 8: Passed!")
 
 
+async def test_scenario_9_multi_round_flow():
+    """SCENARIO 9: Multi-round sequence (Round 1: Defusal Victory -> Reset -> Round 2: Detonation Victory -> Reset)."""
+    print("\n--- Running Scenario 9: Multi-Round Flow (Round 1: Defuse -> Reset -> Round 2: Explode) ---")
+    state = SpikeState()
+    
+    # --- ROUND 1 ---
+    await spike_logic.start_round(state)
+    await spike_logic.start_plant(state, "A1")
+    for _ in range(config.PLANT_TIME):
+        await simulate_tick(state)
+    data = await state.get_state()
+    assert data.state == "planted"
+    
+    # Start defusing (using the previously-failing A1 default player to verify the role fix!)
+    # We pass skip_role_check=True because the USB monitor does this now
+    success = await spike_logic.start_defuse(state, "A1", skip_role_check=True)
+    assert success, "Should start defusal for A1 with skip_role_check=True"
+    
+    # Fast forward defusal
+    original_defuse = config.DEFUSE_TIME
+    config.DEFUSE_TIME = 10
+    await state.update(defuse_remaining=10)
+    for _ in range(10):
+        await simulate_tick(state)
+        
+    data = await state.get_state()
+    assert data.state == "defused", "Round 1 should end in defused state"
+    
+    # Reset Round 1
+    await spike_logic.reset_round(state)
+    data = await state.get_state()
+    assert data.state == "idle", "RPi should go back to IDLE after reset_round"
+    
+    # --- ROUND 2 ---
+    await spike_logic.start_round(state)
+    await spike_logic.start_plant(state, "A1")
+    for _ in range(config.PLANT_TIME):
+        await simulate_tick(state)
+    data = await state.get_state()
+    assert data.state == "planted"
+    
+    # Let it explode
+    for _ in range(config.SPIKE_TIME):
+        await simulate_tick(state)
+        
+    data = await state.get_state()
+    assert data.state == "exploded", "Round 2 should end in exploded state"
+    
+    # Reset Round 2
+    await spike_logic.reset_round(state)
+    data = await state.get_state()
+    assert data.state == "idle", "RPi should go back to IDLE after reset_round"
+    
+    # Restore config
+    config.DEFUSE_TIME = original_defuse
+    print("[PASS] Scenario 9: Passed!")
+
+
 async def main():
     print("=======================================")
     print("RUNNING SPIKE STATE MACHINE AUTOMATED TESTS")
@@ -401,6 +459,7 @@ async def main():
         await test_scenario_6_round_pauses_during_planting()
         await test_scenario_7_round_resumes_when_planter_killed()
         await test_scenario_8_spike_timer_freezes_during_defuse()
+        await test_scenario_9_multi_round_flow()
         print("\n=======================================")
         print("ALL SCENARIO TESTS PASSED SUCCESSFULLY!")
         print("=======================================")
@@ -410,6 +469,7 @@ async def main():
     except Exception as e:
         print(f"\n[FAIL] UNEXPECTED ERROR: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,6 +6,7 @@ import logging
 from spike_state import SpikeState, StateData
 import config
 from websocket_manager import ws_manager
+from gpio_output import gpio_handler
 import backend_client
 
 logger = logging.getLogger("spike_logic")
@@ -177,7 +178,7 @@ async def on_player_killed(spike_state: SpikeState, player_id: str) -> bool:
     return False
 
 async def explode(spike_state: SpikeState):
-    """Spike exploded — ATTACKERS WIN. Announce result, reset to IDLE, and shut down."""
+    """Spike exploded — ATTACKERS WIN. Announce result."""
     await spike_state.update(
         state="exploded",
         spike_remaining=0
@@ -193,18 +194,8 @@ async def explode(spike_state: SpikeState):
     print("=" * 40 + "\n")
     sys.stdout.flush()
 
-    # Reset state to IDLE before shutting down
-    await spike_state.reset()
-    await broadcast_state(spike_state)
-    gpio_handler.cleanup()
-
-    # Give a moment for broadcasts/GPIO to finish, then exit
-    await asyncio.sleep(2)
-    logger.info("Round ended. Shutting down.")
-    os._exit(0)
-
 async def defuse_success(spike_state: SpikeState):
-    """Spike defused — DEFENDERS WIN. Announce result, reset to IDLE, and shut down."""
+    """Spike defused — DEFENDERS WIN. Announce result."""
     await spike_state.update(
         state="defused",
         defuse_remaining=0
@@ -219,16 +210,6 @@ async def defuse_success(spike_state: SpikeState):
     print("   🛡️  DEFENDERS WON — SPIKE DEFUSED!  🛡️")
     print("=" * 40 + "\n")
     sys.stdout.flush()
-
-    # Reset state to IDLE before shutting down
-    await spike_state.reset()
-    await broadcast_state(spike_state)
-    gpio_handler.cleanup()
-
-    # Give a moment for broadcasts/GPIO to finish, then exit
-    await asyncio.sleep(2)
-    logger.info("Round ended. Shutting down.")
-    os._exit(0)
 
 async def reset_round(spike_state: SpikeState):
     """Resets the entire game round back to IDLE."""
