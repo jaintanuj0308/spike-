@@ -6,8 +6,7 @@ import logging
 from spike_state import SpikeState, StateData
 import config
 from websocket_manager import ws_manager
-from gpio_output import gpio_handler
-from backend_client import backend_client
+import backend_client
 
 logger = logging.getLogger("spike_logic")
 
@@ -134,6 +133,8 @@ async def cancel_defuse(spike_state: SpikeState) -> bool:
     new_data = await spike_state.get_state()
     print_spike_state(new_data)
     await broadcast_state(spike_state)
+    # Notify backend so it resumes the spike countdown timer
+    await notify_backend({"event": "cancel_defuse"})
     gpio_handler.on_state_change(new_data.state)
     return True
 
@@ -152,11 +153,13 @@ async def on_player_killed(spike_state: SpikeState, player_id: str) -> bool:
         new_data = await spike_state.get_state()
         print_spike_state(new_data)
         await broadcast_state(spike_state)
+        # Notify backend so it cancels its plant tick loop and resumes the round timer
+        await notify_backend({"event": "cancel_plant", "player_id": player_id})
         gpio_handler.on_state_change(new_data.state)
         return True
         
     elif data.state == "defusing" and data.defuser_id == player_id:
-        # Defender defuser killed: pause defusing, return to PLANTED, keep defuse progress
+        # Defender defuser killed: pause defusing, return to PLANTED, resume spike timer
         await spike_state.update(
             state="planted",
             defuser_id=None,
@@ -165,6 +168,8 @@ async def on_player_killed(spike_state: SpikeState, player_id: str) -> bool:
         new_data = await spike_state.get_state()
         print_spike_state(new_data)
         await broadcast_state(spike_state)
+        # Notify backend so it cancels its defuse tick loop and resumes the spike countdown
+        await notify_backend({"event": "cancel_defuse"})
         gpio_handler.on_state_change(new_data.state)
         return True
         
@@ -236,8 +241,8 @@ async def reset_round(spike_state: SpikeState):
 async def notify_backend(event: dict):
     """Broadcasts an outbound event dict to all WS clients and the backend."""
     await ws_manager.broadcast(event)
-    if backend_client is not None:
-        await backend_client.send_event(event)
+    if backend_client.backend_client is not None:
+        await backend_client.backend_client.send_event(event)
 
 async def start_round(spike_state: SpikeState):
     """Marks the round as active and unpaused."""
