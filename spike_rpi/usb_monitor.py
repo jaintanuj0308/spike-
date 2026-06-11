@@ -18,6 +18,8 @@ class USBMonitor:
         
         if config.ENABLE_USB_MONITOR:
             try:
+                
+                
                 import pyudev
                 self.context = pyudev.Context()
                 self.monitor = pyudev.Monitor.from_netlink(self.context)
@@ -116,7 +118,7 @@ class USBMonitor:
                     await spike_logic.start_plant(self.spike_state, player_id)
                 elif state_data.state == "planted":
                     logger.info(f"USB key detected! Starting defusing for player: {player_id}")
-                    await spike_logic.start_defuse(self.spike_state, player_id)
+                    await spike_logic.start_defuse(self.spike_state, player_id, skip_role_check=True)
                 elif state_data.state == "defusing":
                     # USB re-inserted while defusing → cancel defuse, resume spike timer
                     logger.info(f"USB re-inserted during DEFUSING; cancelling defuse, resuming spike timer.")
@@ -210,7 +212,7 @@ class USBMonitor:
                     if state_data.state == 'idle':
                         await spike_logic.start_plant(self.spike_state, player_id)
                     elif state_data.state == 'planted':
-                        await spike_logic.start_defuse(self.spike_state, player_id)
+                        await spike_logic.start_defuse(self.spike_state, player_id, skip_role_check=True)
                     elif state_data.state == 'defusing':
                         logger.info(f"[POLL] USB re-inserted during DEFUSING; cancelling defuse.")
                         await spike_logic.cancel_defuse(self.spike_state)
@@ -245,7 +247,7 @@ class USBMonitor:
         if state_data.state == "idle":
             await spike_logic.start_plant(self.spike_state, player_id)
         elif state_data.state == "planted":
-            await spike_logic.start_defuse(self.spike_state, player_id)
+            await spike_logic.start_defuse(self.spike_state, player_id, skip_role_check=True)
         elif state_data.state == "defusing":
             logger.info(f"[MOCK USB] Re-inserted during DEFUSING; cancelling defuse.")
             await spike_logic.cancel_defuse(self.spike_state)
