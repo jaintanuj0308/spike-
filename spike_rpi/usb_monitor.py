@@ -96,8 +96,8 @@ class USBMonitor:
             action = event.action
             devtype = event.get('DEVTYPE')
 
-            # We only care about block devices (disk or partition)
-            if devtype not in ('disk', 'partition'):
+            # Only process the main disk block device to avoid duplicate events from partition tables
+            if devtype != 'disk':
                 return
 
             logger.debug(f"udev event: {action} on {event.device_path} (devtype: {devtype})")
@@ -191,7 +191,7 @@ class USBMonitor:
         # so they don't trigger start_plant on first iteration
         base_path = Path('/dev/disk/by-id')
         if base_path.is_dir():
-            known = {p.resolve() for p in base_path.iterdir() if p.is_symlink()}
+            known = {p.resolve() for p in base_path.iterdir() if p.is_symlink() and "-part" not in p.name}
         else:
             known = set()
         logger.info(f"[POLL] Initial baseline: {len(known)} existing device(s) detected and ignored.")
@@ -199,7 +199,7 @@ class USBMonitor:
             try:
                 base_path = Path('/dev/disk/by-id')
                 if base_path.is_dir():
-                    current = {p.resolve() for p in base_path.iterdir() if p.is_symlink()}
+                    current = {p.resolve() for p in base_path.iterdir() if p.is_symlink() and "-part" not in p.name}
                 else:
                     current = set()
                 added = current - known

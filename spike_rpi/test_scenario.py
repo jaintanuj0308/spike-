@@ -445,6 +445,62 @@ async def test_scenario_9_multi_round_flow():
     print("[PASS] Scenario 9: Passed!")
 
 
+async def test_scenario_10_usb_reinsert_duplicate_events():
+    """SCENARIO 10: USB removal and re-insertion with duplicate disk/partition events."""
+    print("\n--- Running Scenario 10: USB Re-insertion with Duplicate Events ---")
+    from usb_monitor import USBMonitor
+    
+    state = SpikeState()
+    monitor = USBMonitor(state)
+    
+    # We will simulate udev events using a Mock event class
+    class MockUdevEvent:
+        def __init__(self, action, device_path, devtype):
+            self.action = action
+            self.device_path = device_path
+            self.data = {
+                'DEVTYPE': devtype,
+                'ID_SERIAL_SHORT': 'ATTACKER_SERIAL_1',
+                'ID_SERIAL': 'ATTACKER_SERIAL_1',
+                'ID_VENDOR_ID': '0930',
+                'ID_MODEL_ID': '6545'
+            }
+        def get(self, key, default=None):
+            return self.data.get(key, default)
+
+    # 1. State is IDLE. Plug in USB (both disk and partition events)
+    await monitor._process_event(MockUdevEvent('add', '/dev/sdb', 'disk'))
+    await monitor._process_event(MockUdevEvent('add', '/dev/sdb1', 'partition'))
+    
+    data = await state.get_state()
+    assert data.state == "planting", f"Should be planting, got {data.state}"
+    assert '/dev/sdb' in monitor.active_devices
+    assert '/dev/sdb1' not in monitor.active_devices, "Partition event should be ignored and not tracked"
+    
+    # 2. Complete planting
+    await spike_logic.spike_planted(state)
+    data = await state.get_state()
+    assert data.state == "planted"
+    
+    # 3. Remove USB (both disk and partition events)
+    await monitor._process_event(MockUdevEvent('remove', '/dev/sdb1', 'partition'))
+    await monitor._process_event(MockUdevEvent('remove', '/dev/sdb', 'disk'))
+    
+    data = await state.get_state()
+    assert data.state == "defusing", f"Should be defusing, got {data.state}"
+    assert '/dev/sdb' not in monitor.active_devices
+    
+    # 4. Insert USB back before defusing completes (re-inserting)
+    await monitor._process_event(MockUdevEvent('add', '/dev/sdb', 'disk'))
+    await monitor._process_event(MockUdevEvent('add', '/dev/sdb1', 'partition'))
+    
+    data = await state.get_state()
+    assert data.state == "planted", f"Should successfully resume to planted state, but got {data.state}"
+    assert '/dev/sdb' in monitor.active_devices
+    assert '/dev/sdb1' not in monitor.active_devices
+    print("[PASS] Scenario 10: Passed!")
+
+
 async def main():
     print("=======================================")
     print("RUNNING SPIKE STATE MACHINE AUTOMATED TESTS")
@@ -460,6 +516,7 @@ async def main():
         await test_scenario_7_round_resumes_when_planter_killed()
         await test_scenario_8_spike_timer_freezes_during_defuse()
         await test_scenario_9_multi_round_flow()
+        await test_scenario_10_usb_reinsert_duplicate_events()
         print("\n=======================================")
         print("ALL SCENARIO TESTS PASSED SUCCESSFULLY!")
         print("=======================================")
